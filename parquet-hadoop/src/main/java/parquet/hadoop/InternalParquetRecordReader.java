@@ -38,6 +38,7 @@ import parquet.io.api.RecordMaterializer;
 import parquet.schema.GroupType;
 import parquet.schema.MessageType;
 import parquet.schema.Type;
+import parquet.vector.ColumnVector;
 
 import static java.lang.String.format;
 import static parquet.Log.DEBUG;
@@ -207,6 +208,42 @@ class InternalParquetRecordReader<T> {
           if (DEBUG) LOG.debug("filtered record reader reached end of block");
           continue;
         }
+
+        recordFound = true;
+
+        if (DEBUG) LOG.debug("read value: " + currentValue);
+      } catch (RuntimeException e) {
+        throw new ParquetDecodingException(format("Can not read value at %d in block %d in file %s", current, currentBlock, file), e);
+      }
+    }
+    return true;
+  }
+
+  public boolean nextBatch(ColumnVector vector) throws IOException, InterruptedException {
+    boolean recordFound = false;
+
+    while (!recordFound) {
+      // no more records left
+      if (current >= total) { return false; }
+
+      try {
+        checkRead();
+        recordReader.readVector(null, vector);//TODO do we need the col. descriptor here?
+        current += vector.size();
+        System.out.println("CURRENT " + current);
+        if (recordReader.shouldSkipCurrentRecord()) {
+          // this record is being filtered via the filter2 package
+          if (DEBUG) LOG.debug("skipping record");
+          continue;
+        }
+
+        //TODO how to handle this case?
+//        if (currentValue == null) {
+//          // only happens with FilteredRecordReader at end of block
+//          current = totalCountLoadedSoFar;
+//          if (DEBUG) LOG.debug("filtered record reader reached end of block");
+//          continue;
+//        }
 
         recordFound = true;
 
