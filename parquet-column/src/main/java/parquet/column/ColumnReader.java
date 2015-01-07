@@ -16,6 +16,7 @@
 package parquet.column;
 
 import parquet.io.api.Binary;
+import parquet.vector.ColumnVector;
 
 /**
  * Reader for (repetition level, definition level, values) triplets.
@@ -109,4 +110,8 @@ public interface ColumnReader {
    */
   ColumnDescriptor getDescriptor();
 
+  /**
+   * Reads a vector of values from the page into the given vector
+   */
+  void readVector(ColumnVector vector);
 }

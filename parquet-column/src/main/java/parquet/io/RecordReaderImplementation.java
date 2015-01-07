@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 import parquet.Log;
+import parquet.column.ColumnDescriptor;
 import parquet.column.ColumnReader;
 import parquet.column.impl.ColumnReadStoreImpl;
 import parquet.io.api.Converter;
@@ -33,6 +34,7 @@ import parquet.io.api.RecordConsumer;
 import parquet.io.api.RecordMaterializer;
 import parquet.schema.MessageType;
 import parquet.schema.PrimitiveType.PrimitiveTypeName;
+import parquet.vector.ColumnVector;
 
 
 /**
@@ -419,6 +421,47 @@ class RecordReaderImplementation<T> extends RecordReader<T> {
       recordMaterializer.skipCurrentRecord();
     }
     return record;
+  }
+
+  @Override
+  public void readVector(ColumnDescriptor descriptor, ColumnVector vector) {
+    int currentLevel = 0;
+    recordRootConverter.start();
+    State currentState = states[0];
+    do {
+      ColumnReader columnReader = currentState.column;
+      int d = columnReader.getCurrentDefinitionLevel();
+      // creating needed nested groups until the current field (opening tags)
+      int depth = currentState.definitionLevelToDepth[d];
+      for (; currentLevel <= depth; ++currentLevel) {
+        currentState.groupConverterPath[currentLevel].start();
+      }
+      // currentLevel = depth + 1 at this point
+      // set the current value
+      if (d >= currentState.maxDefinitionLevel) {
+        // not null
+//        columnReader.writeCurrentValueToConverter();
+        columnReader.readVector(vector);
+      }
+      columnReader.consume();
+
+      int nextR = currentState.maxRepetitionLevel == 0 ? 0 : columnReader.getCurrentRepetitionLevel();
+      // level to go to close current groups
+      int next = currentState.nextLevel[nextR];
+      for (; currentLevel > next; currentLevel--) {
+        currentState.groupConverterPath[currentLevel - 1].end();
+      }
+
+      currentState = currentState.nextState[nextR];
+    } while (currentState != null);
+
+    recordRootConverter.end();
+    T record = recordMaterializer.getCurrentRecord();
+    shouldSkipCurrentRecord = record == null;
+    if (shouldSkipCurrentRecord) {
+      recordMaterializer.skipCurrentRecord();
+    }
+//    return record;
   }
 
   @Override

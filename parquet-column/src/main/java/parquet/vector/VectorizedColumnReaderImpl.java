@@ -13,17 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package parquet.column.impl;
-
-import static java.lang.String.format;
-import static parquet.Log.DEBUG;
-import static parquet.Preconditions.checkNotNull;
-import static parquet.column.ValuesType.DEFINITION_LEVEL;
-import static parquet.column.ValuesType.REPETITION_LEVEL;
-import static parquet.column.ValuesType.VALUES;
-
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
+package parquet.vector;
 
 import parquet.Log;
 import parquet.bytes.BytesInput;
@@ -32,11 +22,7 @@ import parquet.column.ColumnDescriptor;
 import parquet.column.ColumnReader;
 import parquet.column.Dictionary;
 import parquet.column.Encoding;
-import parquet.column.page.DataPage;
-import parquet.column.page.DataPageV1;
-import parquet.column.page.DataPageV2;
-import parquet.column.page.DictionaryPage;
-import parquet.column.page.PageReader;
+import parquet.column.page.*;
 import parquet.column.values.ValuesReader;
 import parquet.column.values.rle.RunLengthBitPackingHybridDecoder;
 import parquet.io.ParquetDecodingException;
@@ -44,21 +30,24 @@ import parquet.io.api.Binary;
 import parquet.io.api.PrimitiveConverter;
 import parquet.schema.PrimitiveType.PrimitiveTypeName;
 import parquet.schema.PrimitiveType.PrimitiveTypeNameConverter;
-import parquet.vector.ColumnVector;
 
-/**
- * ColumnReader implementation
- *
- * @author Julien Le Dem
- *
- */
-class ColumnReaderImpl implements ColumnReader {
-  private static final Log LOG = Log.getLog(ColumnReaderImpl.class);
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+import static java.lang.String.format;
+import static parquet.Log.DEBUG;
+import static parquet.Preconditions.checkNotNull;
+import static parquet.column.ValuesType.*;
+import static parquet.vector.ColumnVector.MAX_VECTOR_LENGTH;
+
+public class VectorizedColumnReaderImpl implements ColumnReader {
+  private static final Log LOG = Log.getLog(VectorizedColumnReaderImpl.class);
 
   /**
    * binds the lower level page decoder to the record converter materializing the records
-   *
-   * @author Julien Le Dem
    *
    */
   private static abstract class Binding {
@@ -126,6 +115,13 @@ class ColumnReaderImpl implements ColumnReader {
     public double getDouble() {
       throw new UnsupportedOperationException();
     }
+
+    /**
+     * @return current value
+     */
+    public void readVector(ColumnVector vector) {
+      throw new UnsupportedOperationException();
+    }
   }
 
   private final ColumnDescriptor path;
@@ -151,6 +147,10 @@ class ColumnReaderImpl implements ColumnReader {
   // this is needed because we will attempt to read the value twice when filtering
   // TODO: rework that
   private boolean valueRead;
+
+  //Vector support
+  DataPage[] pages;
+  private int pagesRead = 0;
 
   private void bindToDictionary(final Dictionary dictionary) {
     binding =
@@ -220,6 +220,12 @@ class ColumnReaderImpl implements ColumnReader {
             current = 0;
             dataColumn.skip();
           }
+
+          @Override
+          public void readVector(ColumnVector vector) {
+            dataColumn.readVector(vector);
+          }
+
           public double getDouble() {
             return current;
           }
@@ -235,6 +241,12 @@ class ColumnReaderImpl implements ColumnReader {
           void read() {
             current = dataColumn.readInteger();
           }
+
+          @Override
+          public void readVector(ColumnVector vector) {
+            dataColumn.readVector(vector);
+          }
+
           public void skip() {
             current = 0;
             dataColumn.skip();
@@ -309,6 +321,10 @@ class ColumnReaderImpl implements ColumnReader {
             dataColumn.skip();
           }
           @Override
+          public void readVector(ColumnVector vector) {
+            dataColumn.readVector(vector);
+          }
+          @Override
           public Binary getBinary() {
             return current;
           }
@@ -325,7 +341,7 @@ class ColumnReaderImpl implements ColumnReader {
    * @param path the descriptor for the corresponding column
    * @param pageReader the underlying store to read from
    */
-  public ColumnReaderImpl(ColumnDescriptor path, PageReader pageReader, PrimitiveConverter converter) {
+  public VectorizedColumnReaderImpl(ColumnDescriptor path, PageReader pageReader, PrimitiveConverter converter) {
     this.path = checkNotNull(path, "path");
     this.pageReader = checkNotNull(pageReader, "pageReader");
     this.converter = checkNotNull(converter, "converter");
@@ -350,6 +366,7 @@ class ColumnReaderImpl implements ColumnReader {
   }
 
   private boolean isFullyConsumed() {
+    System.out.println("isFullyConsumed readValues: " + readValues + " totalValueCount: " + totalValueCount);
     return readValues >= totalValueCount;
   }
 
@@ -469,7 +486,19 @@ class ColumnReaderImpl implements ColumnReader {
    * Reads a vector into the binding.
    */
   public void readVector(ColumnVector vector) {
-    throw new UnsupportedOperationException("Vectorized reads are not supported");
+    try {
+      if (!valueRead) {
+        binding.readVector(vector);
+        valueRead = true;
+        this.pages = null; //processed this batch
+      }
+    } catch (RuntimeException e) {
+      throw new ParquetDecodingException(
+              format(
+                      "Can't read value in column %s at value %d out of %d, %d out of %d in currentPage. repetition level: %d, definition level: %d",
+                      path, readValues, totalValueCount, readValues - (endOfPageValueCount - pageValueCount), pageValueCount, repetitionLevel, definitionLevel),
+              e);
+    }
   }
 
   /**
@@ -497,36 +526,60 @@ class ColumnReaderImpl implements ColumnReader {
   private void readRepetitionAndDefinitionLevels() {
     repetitionLevel = repetitionLevelColumn.nextInt();
     definitionLevel = definitionLevelColumn.nextInt();
-    ++readValues;
+//    ++readValues;
   }
 
   private void checkRead() {
-    if (isPageFullyConsumed()) {
+    if (this.pages == null) {//processed a single batch?
       if (isFullyConsumed()) {
         if (DEBUG) LOG.debug("end reached");
         repetitionLevel = 0; // the next repetition level
         return;
       }
-      readPage();
+      readPages();
     }
     readRepetitionAndDefinitionLevels();
   }
 
-  private void readPage() {
-    if (DEBUG) LOG.debug("loading page");
-    DataPage page = pageReader.readPage();
-    page.accept(new DataPage.Visitor<Void>() {
-      @Override
-      public Void visit(DataPageV1 dataPageV1) {
-        readPageV1(dataPageV1);
-        return null;
+  DataPage.Visitor visitor = new DataPage.Visitor<Void>() {
+    @Override
+    public Void visit(DataPageV1 dataPageV1) {
+      readPageV1(dataPageV1);
+      return null;
+    }
+    @Override
+    public Void visit(DataPageV2 dataPageV2) {
+      readPageV2(dataPageV2);
+      return null;
+    }
+  };
+
+  private void readPages() {
+    int i = 0;
+    long totalValuesRead = 0;
+    pages = new DataPage[MAX_VECTOR_LENGTH];
+    while(i < MAX_VECTOR_LENGTH) {
+      DataPage page = pageReader.readPage();
+      if (page == null) {
+        break;
       }
-      @Override
-      public Void visit(DataPageV2 dataPageV2) {
-        readPageV2(dataPageV2);
-        return null;
-      }
-    });
+      page.accept(visitor);
+      pages[i] = page;
+      readValues += page.getValueCount();
+      totalValuesRead += page.getValueCount();
+      i++;
+    }
+
+    if (i < MAX_VECTOR_LENGTH - 1) {
+      //couldn't read a complete batch, so get rid of nulls
+      //TODO make this more efficient
+      pages = Arrays.copyOf(pages, i);
+    }
+
+    System.out.println("Total read values so far " + readValues + " read in this batch " + totalValuesRead);
+    ((VectorizedValuesReader) this.dataColumn).setPages(pages);
+    pagesRead+=pages.length;
+    System.out.println("Read pages so far " + pagesRead + " read in this batch " + pages.length);
   }
 
   private void initDataReader(Encoding dataEncoding, byte[] bytes, int offset, int valueCount) {
@@ -537,9 +590,9 @@ class ColumnReaderImpl implements ColumnReader {
         throw new ParquetDecodingException(
             "could not read page in col " + path + " as the dictionary was missing for encoding " + dataEncoding);
       }
-      this.dataColumn = dataEncoding.getDictionaryBasedValuesReader(path, VALUES, dictionary);
+      this.dataColumn = new VectorizedValuesReader(dataEncoding.getDictionaryBasedValuesReader(path, VALUES, dictionary));
     } else {
-      this.dataColumn = dataEncoding.getValuesReader(path, VALUES);
+      this.dataColumn = new VectorizedValuesReader((dataEncoding.getValuesReader(path, VALUES)));
     }
     if (dataEncoding.usesDictionary() && converter.hasDictionarySupport()) {
       bindToDictionary(dictionary);
@@ -597,10 +650,6 @@ class ColumnReaderImpl implements ColumnReader {
     } catch (IOException e) {
       throw new ParquetDecodingException("could not read levels in page for col " + path, e);
     }
-  }
-
-  private boolean isPageFullyConsumed() {
-    return readValues >= endOfPageValueCount;
   }
 
   /**

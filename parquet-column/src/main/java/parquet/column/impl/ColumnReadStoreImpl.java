@@ -26,6 +26,7 @@ import parquet.io.api.PrimitiveConverter;
 import parquet.schema.GroupType;
 import parquet.schema.MessageType;
 import parquet.schema.Type;
+import parquet.vector.VectorizedColumnReaderImpl;
 
 /**
  * Implementation of the ColumnReadStore
@@ -58,9 +59,14 @@ public class ColumnReadStoreImpl implements ColumnReadStore {
     return newMemColumnReader(path, pageReadStore.getPageReader(path));
   }
 
-  private ColumnReaderImpl newMemColumnReader(ColumnDescriptor path, PageReader pageReader) {
+  //FIXME plug in the new vector reader for testing
+  public static boolean VECTORIZATION_ENABLED = true;
+  private ColumnReader newMemColumnReader(ColumnDescriptor path, PageReader pageReader) {
     PrimitiveConverter converter = getPrimitiveConverter(path);
-    return new ColumnReaderImpl(path, pageReader, converter);
+    if (VECTORIZATION_ENABLED)
+      return new VectorizedColumnReaderImpl(path, pageReader, converter);
+    else
+      return new ColumnReaderImpl(path, pageReader, converter);
   }
 
   private PrimitiveConverter getPrimitiveConverter(ColumnDescriptor path) {
