@@ -16,6 +16,9 @@
 package parquet.io;
 
 
+import parquet.column.ColumnDescriptor;
+import parquet.vector.ColumnVector;
+
 /**
  * used to read reassembled records
  * @author Julien Le Dem
@@ -36,5 +39,14 @@ public abstract class RecordReader<T> {
    */
   public boolean shouldSkipCurrentRecord() {
     return false;
+  }
+
+
+  /**
+   * Reads a vector of pages into the given vector
+   * @param vector the vector to fill
+   */
+  public void readVector(ColumnVector vector) {
+    throw new UnsupportedOperationException();
   }
 }

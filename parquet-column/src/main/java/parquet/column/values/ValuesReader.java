@@ -19,6 +19,7 @@ import java.io.IOException;
 
 import parquet.io.ParquetDecodingException;
 import parquet.io.api.Binary;
+import parquet.vector.ColumnVector;
 
 /**
  * Base class to implement an encoding for a given column type.
@@ -56,7 +57,7 @@ public abstract class ValuesReader {
    * @throws IOException
    */
   public abstract void initFromPage(int valueCount, byte[] page, int offset) throws IOException;
-  
+
   /**
    * Called to return offset of the next section
    * @return offset of the next section
@@ -119,5 +120,12 @@ public abstract class ValuesReader {
    * Skips the next value in the page
    */
   abstract public void skip();
+
+  /**
+   * Reads a vector of pages into the given ColumnVector
+   */
+   public void readVector(ColumnVector vector) {
+    throw new UnsupportedOperationException();
+  }
 }
 

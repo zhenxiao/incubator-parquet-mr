@@ -30,6 +30,7 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
+import parquet.column.ColumnDescriptor;
 import parquet.filter.UnboundRecordFilter;
 import parquet.filter2.compat.FilterCompat;
 import parquet.filter2.compat.FilterCompat.Filter;
@@ -40,6 +41,7 @@ import parquet.hadoop.api.ReadSupport.ReadContext;
 import parquet.hadoop.metadata.BlockMetaData;
 import parquet.hadoop.metadata.GlobalMetaData;
 import parquet.schema.MessageType;
+import parquet.vector.ColumnVector;
 
 /**
  * Read records from a Parquet file.
@@ -138,6 +140,24 @@ public class ParquetReader<T> implements Closeable {
       throw new IOException(e);
     }
   }
+
+  public void readVector(ColumnVector vector) throws IOException {
+    try {
+      if (reader != null && reader.nextBatch(vector)) {
+        return;
+      } else {
+        initReader();
+        if (reader == null) {
+          return;
+        } else {
+          readVector(vector);
+        }
+      }
+    } catch (InterruptedException e) {
+      throw new IOException(e);
+    }
+  }
+
 
   private void initReader() throws IOException {
     if (reader != null) {
