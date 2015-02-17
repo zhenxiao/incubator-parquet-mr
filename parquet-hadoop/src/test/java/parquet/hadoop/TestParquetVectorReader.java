@@ -31,6 +31,12 @@ public class TestParquetVectorReader
   private static final int nElements = 100000;
   private static final Configuration conf = new Configuration();
   private static final Path file = new Path("target/test/TestParquetVectorReader/testParquetFile");
+  private static final MessageType schema = parseMessageType(
+                                                "message test { "
+                                                + "required binary binary_field; "
+                                                + "required int32 int32_field; "
+                                                + "required double double_field; "
+                                                + "} ");
 
   @AfterClass
   public static void cleanup() throws IOException {
@@ -45,12 +51,6 @@ public class TestParquetVectorReader
     final boolean dictionaryEnabled = true;
     cleanup();
 
-    MessageType schema = parseMessageType(
-            "message test { "
-                    + "required binary binary_field; "
-                    + "required int32 int32_field; "
-                    + "required double double_field; "
-                    + "} ");
     GroupWriteSupport.setSchema(schema, conf);
     SimpleGroupFactory f = new SimpleGroupFactory(schema);
     ParquetWriter<Group> writer = new ParquetWriter<Group>(
@@ -79,11 +79,12 @@ public class TestParquetVectorReader
     conf.set(ReadSupport.PARQUET_READ_SCHEMA, "message test { required double double_field;}");
     ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
 
+    MessageType doubleCol = parseMessageType("message test { required double double_field;}");
     int expected = 0;
     int previousRead = 0;
     while(true) {
       DoubleColumnVector vector = new DoubleColumnVector();
-      reader.readVector(vector);
+      reader.readVector(vector, doubleCol);
       int elementsRead = vector.size();
       System.out.println("Read " + elementsRead);
       ByteBuffer bb = vector.decode();
@@ -107,11 +108,12 @@ public class TestParquetVectorReader
     conf.set(ReadSupport.PARQUET_READ_SCHEMA, "message test { required int32 int32_field;}");
     ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
 
+    MessageType intCol = parseMessageType("message test { required int32 int32_field;}");
     int expected = 0;
     int previousRead = 0;
     while(true) {
       IntColumnVector vector = new IntColumnVector();
-      reader.readVector(vector);
+      reader.readVector(vector, intCol);
       int elementsRead = vector.size();
       System.out.println("Read " + elementsRead);
       ByteBuffer bb = vector.decode();
@@ -142,10 +144,11 @@ public class TestParquetVectorReader
       expected.append(b);
     }
 
+    MessageType binaryCol = parseMessageType("message test { required binary binary_field;}");
     StringBuffer actual = new StringBuffer();
     while(true) {
       ByteColumnVector byteVector = new ByteColumnVector(true);
-      reader.readVector(byteVector);
+      reader.readVector(byteVector, binaryCol);
       int elementsRead = byteVector.size();
       System.out.println("Read " + elementsRead + " elements");
       if (elementsRead != 0) {
@@ -162,6 +165,56 @@ public class TestParquetVectorReader
         break;
       }
     }
+    reader.close();
+  }
+
+  @Test
+  public void testMultipleVectorRead() throws Exception {
+    conf.set(ReadSupport.PARQUET_READ_SCHEMA, "message test { required double double_field; required int32 int32_field;}");
+    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+
+    MessageType doubleCol = parseMessageType("message test { required double double_field;}");
+    int expected = 0;
+    int previousRead = 0;
+    while(true) {
+      DoubleColumnVector vector = new DoubleColumnVector();
+      reader.readVector(vector, doubleCol);
+      int elementsRead = vector.size();
+      System.out.println("Read " + elementsRead);
+      ByteBuffer bb = vector.decode();
+      for (int j = 0; j < elementsRead; j++) {
+        double read = bb.getDouble();
+        assertEquals(expected * 1.0, read, 0.01);
+        System.out.println(read);
+        expected++;
+      }
+      previousRead += elementsRead;
+      if (previousRead >= nElements) {
+        break;
+      }
+    }
+
+    MessageType intCol = parseMessageType("message test { required int32 int32_field;}");
+    expected = 0;
+    previousRead = 0;
+    while(true) {
+      IntColumnVector vector = new IntColumnVector();
+      reader.readVector(vector, intCol);
+      int elementsRead = vector.size();
+      System.out.println("Read " + elementsRead);
+      ByteBuffer bb = vector.decode();
+      for (int j = 0; j < elementsRead; j++) {
+        int read = bb.getInt();
+        System.out.println(read);
+        assertEquals(expected, read);
+        expected++;
+      }
+      previousRead += elementsRead;
+      if (previousRead >= nElements) {
+        break;
+      }
+    }
+
     reader.close();
   }
 }

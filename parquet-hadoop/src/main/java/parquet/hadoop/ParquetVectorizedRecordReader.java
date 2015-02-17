@@ -111,12 +111,13 @@ public class ParquetVectorizedRecordReader<T> extends RecordReader<Void, T>
      * ColumnVector holds the bytes of the vector
      * ColumnVector.decode() materializes the vector values
      * @param vector the vector to fill
+     * @param column the requested column
      * @throws java.io.IOException
      */
-    public void readVector(ColumnVector vector)
+    public void readVector(ColumnVector vector, MessageType column)
     {
         try {
-            internalReader.nextBatch(vector);
+            internalReader.nextBatch(vector, column);
         } catch (Exception e) {
             LOG.info("Get exception when reading batch: " + e.getMessage());
         }

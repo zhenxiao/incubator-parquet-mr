@@ -74,6 +74,12 @@ class InternalParquetRecordReader<T> {
 
   private Path file;
 
+  private Map<String, String> extraMetadata;
+  private Map<String, String> readSupportMetadata;
+  private List<BlockMetaData> blocks;
+  private Configuration configuration;
+  private MessageType lastColumn = null;
+
   /**
    * @param readSupport Object which helps reads files of the given type, e.g. Thrift, Avro.
    * @param filter for filtering individual records
@@ -131,6 +137,18 @@ class InternalParquetRecordReader<T> {
     }
   }
 
+  private void initializeVector(MessageType column) throws IOException {
+    this.requestedSchema = column;
+    this.columnCount = this.requestedSchema.getPaths().size();
+    this.recordConverter = readSupport.prepareForRead(configuration, extraMetadata, fileSchema,
+                                new ReadSupport.ReadContext(requestedSchema, readSupportMetadata));
+    List<ColumnDescriptor> columns = requestedSchema.getColumns();
+    this.reader = new ParquetFileReader(configuration, file, blocks, columns);
+    for (BlockMetaData block : blocks) {
+      total += block.getRowCount();
+    }
+  }
+
   public void close() throws IOException {
     if (reader != null) {
       reader.close();
@@ -158,6 +176,10 @@ class InternalParquetRecordReader<T> {
     this.fileSchema = fileSchema;
     this.file = file;
     this.columnCount = this.requestedSchema.getPaths().size();
+    this.extraMetadata = extraMetadata;
+    this.readSupportMetadata = readSupportMetadata;
+    this.blocks = blocks;
+    this.configuration = configuration;
     this.recordConverter = readSupport.prepareForRead(
         configuration, extraMetadata, fileSchema,
         new ReadSupport.ReadContext(requestedSchema, readSupportMetadata));
@@ -219,8 +241,17 @@ class InternalParquetRecordReader<T> {
     return true;
   }
 
-  public boolean nextBatch(ColumnVector vector) throws IOException, InterruptedException {
+  public boolean nextBatch(ColumnVector vector, MessageType column) throws IOException, InterruptedException {
     boolean recordFound = false;
+
+    if (lastColumn == null) {
+        total = 0;
+    }
+
+    if (column != lastColumn) {
+        initializeVector(column);
+        lastColumn = column;
+    }
 
     while (!recordFound) {
       // no more records left

@@ -141,16 +141,16 @@ public class ParquetReader<T> implements Closeable {
     }
   }
 
-  public void readVector(ColumnVector vector) throws IOException {
+  public void readVector(ColumnVector vector, MessageType column) throws IOException {
     try {
-      if (reader != null && reader.nextBatch(vector)) {
+      if (reader != null && reader.nextBatch(vector, column)) {
         return;
       } else {
         initReader();
         if (reader == null) {
           return;
         } else {
-          readVector(vector);
+          readVector(vector, column);
         }
       }
     } catch (InterruptedException e) {
