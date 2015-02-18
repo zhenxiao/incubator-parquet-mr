@@ -16,7 +16,7 @@ public class IntColumnVector extends ColumnVector
 
   public IntColumnVector(boolean isLazy) {
     super(int.class, isLazy);
-    values = new int[MAX_VECTOR_LENGTH];
+    values = new int[DEFAULT_VECTOR_LENGTH];
   }
 
   public ByteBuffer decode() {

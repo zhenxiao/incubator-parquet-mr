@@ -60,6 +60,7 @@ public class ColumnReadStoreImpl implements ColumnReadStore {
   }
 
   //FIXME plug in the new vector reader for testing
+  // similar to hive, vectorized reads should be enabled through configuration (false by default)
   public static boolean VECTORIZATION_ENABLED = true;
   private ColumnReader newMemColumnReader(ColumnDescriptor path, PageReader pageReader) {
     PrimitiveConverter converter = getPrimitiveConverter(path);

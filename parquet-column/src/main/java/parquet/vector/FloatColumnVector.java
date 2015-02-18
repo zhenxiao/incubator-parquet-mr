@@ -16,7 +16,7 @@ public class FloatColumnVector extends ColumnVector
 
   public FloatColumnVector(boolean isLazy) {
     super(double.class, isLazy);
-    values = new float[MAX_VECTOR_LENGTH];
+    values = new float[DEFAULT_VECTOR_LENGTH];
   }
 
   @Override

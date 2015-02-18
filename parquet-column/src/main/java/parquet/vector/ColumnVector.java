@@ -17,17 +17,21 @@
  */
 package parquet.vector;
 
+import parquet.column.ColumnDescriptor;
 import parquet.column.page.DataPage;
 import parquet.column.page.DataPageV1;
 import parquet.column.page.DataPageV2;
 import parquet.column.values.ValuesReader;
+import parquet.schema.PrimitiveType;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+import static parquet.schema.PrimitiveType.PrimitiveTypeName.DOUBLE;
+
 public abstract class ColumnVector
 {
-  public static int MAX_VECTOR_LENGTH = 100; //TODO currently in terms of pages, will probably change
+  public static final int DEFAULT_VECTOR_LENGTH = 1024;
 
   protected boolean[] isNull;
   protected Class valueType;
@@ -39,7 +43,7 @@ public abstract class ColumnVector
   protected ValuesReader decoder;
 
   public ColumnVector(Class valueType, boolean isLazy) {
-    this.isNull = new boolean[MAX_VECTOR_LENGTH];
+    this.isNull = new boolean[DEFAULT_VECTOR_LENGTH];
     this.valueType = valueType;
     this.isLazy = isLazy;
   }
@@ -96,5 +100,24 @@ public abstract class ColumnVector
       decoder.initFromPage(page.getValueCount(), ((DataPageV1)page).getBytes().toByteArray(), 0);
     else
       decoder.initFromPage(page.getValueCount(), ((DataPageV2)page).getData().toByteArray(), 0);
+  }
+
+  public static final ColumnVector createVector(ColumnDescriptor descriptor) {
+    switch (descriptor.getType()) {
+      case DOUBLE:
+        return new DoubleColumnVector();
+      case FLOAT:
+        return new FloatColumnVector();
+      case INT32:
+        return new IntColumnVector();
+      case INT64:
+        return new LongColumnVector();
+      case INT96:
+//      case BINARY:
+//      case FIXED_LEN_BYTE_ARRAY:
+//        return new ByteColumnVector();
+      default:
+        throw new IllegalArgumentException("Unhandled column type " + descriptor.getType());
+    }
   }
 }

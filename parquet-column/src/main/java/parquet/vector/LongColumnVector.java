@@ -16,7 +16,7 @@ public class LongColumnVector extends ColumnVector
 
   public LongColumnVector(boolean isLazy) {
     super(int.class, isLazy);
-    values = new long[MAX_VECTOR_LENGTH];
+    values = new long[DEFAULT_VECTOR_LENGTH];
   }
 
   public ByteBuffer decode() {

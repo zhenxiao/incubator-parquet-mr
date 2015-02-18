@@ -16,12 +16,14 @@ import parquet.schema.MessageType;
 import parquet.vector.ByteColumnVector;
 import parquet.vector.DoubleColumnVector;
 import parquet.vector.IntColumnVector;
+import parquet.vector.RowBatch;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static parquet.column.ParquetProperties.WriterVersion.PARQUET_1_0;
 import static parquet.hadoop.metadata.CompressionCodecName.UNCOMPRESSED;
 import static parquet.schema.MessageTypeParser.parseMessageType;
@@ -215,6 +217,70 @@ public class TestParquetVectorReader
       }
     }
 
+    reader.close();
+  }
+
+  @Test
+  public void testPlainIntBatchRead() throws Exception {
+    //set columns to read
+    String messageType = "message test { required int32 int32_field;}";
+    conf.set(ReadSupport.PARQUET_READ_SCHEMA, messageType);
+    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+
+    RowBatch batch = new RowBatch();
+    int expected = 0;
+    int previousRead = 0;
+    while(true) {
+      batch = reader.nextBatch(batch);
+//      int elementsRead = batch.size();
+      assertTrue("Must have a single column", batch.getColumns().length == 1);
+      IntColumnVector vector = (IntColumnVector) batch.getColumns()[0];
+      System.out.println("Read " + vector.size() + " integers");
+      ByteBuffer bb = vector.decode();
+      for (int j = 0; j < vector.size(); j++) {
+        int read = bb.getInt();
+        System.out.println(read);
+        assertEquals(expected, read);
+        expected++;
+      }
+      previousRead += vector.size();
+      if (previousRead >= nElements) {
+        break;
+      }
+    }
+    reader.close();
+  }
+
+  //Failing now, there is a bug when batch loading more than one column
+//  @Test
+  public void testPlainIntDoubleBatchRead() throws Exception {
+    //set columns to read
+    String messageType = "message test { required double double_field; required int32 int32_field;}";
+    conf.set(ReadSupport.PARQUET_READ_SCHEMA, messageType);
+    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+
+    RowBatch batch = new RowBatch();
+    int expected = 0;
+    int previousRead = 0;
+    while(true) {
+      batch = reader.nextBatch(batch);
+      int elementsRead = batch.size();
+      System.out.println("Read " + elementsRead + " integers");
+//      assertTrue("Must have a single column", batch.getColumns().length == 1);
+      DoubleColumnVector dVector = (DoubleColumnVector) batch.getColumns()[0];
+      IntColumnVector iVector = (IntColumnVector) batch.getColumns()[1];
+      ByteBuffer bb = iVector.decode();
+      for (int j = 0; j < iVector.size(); j++) {
+        int read = bb.getInt();
+        System.out.println(read);
+        assertEquals(expected, read);
+        expected++;
+      }
+      previousRead += elementsRead;
+      if (previousRead >= nElements) {
+        break;
+      }
+    }
     reader.close();
   }
 }

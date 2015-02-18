@@ -16,7 +16,7 @@ public class DoubleColumnVector extends ColumnVector
 
   public DoubleColumnVector(boolean isLazy) {
     super(double.class, isLazy);
-    values = new double[MAX_VECTOR_LENGTH];
+    values = new double[DEFAULT_VECTOR_LENGTH];
   }
 
   @Override

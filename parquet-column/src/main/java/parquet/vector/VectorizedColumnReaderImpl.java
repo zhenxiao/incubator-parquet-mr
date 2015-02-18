@@ -34,14 +34,13 @@ import parquet.schema.PrimitiveType.PrimitiveTypeNameConverter;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 import static java.lang.String.format;
 import static parquet.Log.DEBUG;
 import static parquet.Preconditions.checkNotNull;
 import static parquet.column.ValuesType.*;
-import static parquet.vector.ColumnVector.MAX_VECTOR_LENGTH;
+import static parquet.vector.ColumnVector.DEFAULT_VECTOR_LENGTH;
 
 public class VectorizedColumnReaderImpl implements ColumnReader {
   private static final Log LOG = Log.getLog(VectorizedColumnReaderImpl.class);
@@ -149,7 +148,7 @@ public class VectorizedColumnReaderImpl implements ColumnReader {
   private boolean valueRead;
 
   //Vector support
-  DataPage[] pages;
+  List<DataPage> pages;
   private int pagesRead = 0;
 
   private void bindToDictionary(final Dictionary dictionary) {
@@ -490,7 +489,14 @@ public class VectorizedColumnReaderImpl implements ColumnReader {
       if (!valueRead) {
         binding.readVector(vector);
         valueRead = true;
-        this.pages = null; //processed this batch
+        long valuesInThisBatch = 0;
+        for (DataPage page : pages) {
+          valuesInThisBatch += page.getValueCount();
+        }
+        if (vector.size() == valuesInThisBatch) {
+          //exhausted all pages
+          this.pages = null;
+        }
       }
     } catch (RuntimeException e) {
       throw new ParquetDecodingException(
@@ -554,32 +560,27 @@ public class VectorizedColumnReaderImpl implements ColumnReader {
     }
   };
 
+  /**
+   * read as many pages as necessary to fetch {@link parquet.vector.ColumnVector#DEFAULT_VECTOR_LENGTH} values
+   */
   private void readPages() {
-    int i = 0;
     long totalValuesRead = 0;
-    pages = new DataPage[MAX_VECTOR_LENGTH];
-    while(i < MAX_VECTOR_LENGTH) {
+    pages = new ArrayList();
+    while(totalValuesRead < DEFAULT_VECTOR_LENGTH) {
       DataPage page = pageReader.readPage();
       if (page == null) {
         break;
       }
       page.accept(visitor);
-      pages[i] = page;
+      pages.add(page);
       readValues += page.getValueCount();
       totalValuesRead += page.getValueCount();
-      i++;
-    }
-
-    if (i < MAX_VECTOR_LENGTH - 1) {
-      //couldn't read a complete batch, so get rid of nulls
-      //TODO make this more efficient
-      pages = Arrays.copyOf(pages, i);
     }
 
     System.out.println("Total read values so far " + readValues + " read in this batch " + totalValuesRead);
-    ((VectorizedValuesReader) this.dataColumn).setPages(pages);
-    pagesRead+=pages.length;
-    System.out.println("Read pages so far " + pagesRead + " read in this batch " + pages.length);
+    ((VectorizedValuesReader) this.dataColumn).setPages(pages.toArray(new DataPage[pages.size()]));
+    pagesRead += pages.size();
+    System.out.println("Read pages so far " + pagesRead + " read in this batch " + pages.size());
   }
 
   private void initDataReader(Encoding dataEncoding, byte[] bytes, int offset, int valueCount) {

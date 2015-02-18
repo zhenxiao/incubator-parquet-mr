@@ -42,6 +42,7 @@ import parquet.hadoop.metadata.BlockMetaData;
 import parquet.hadoop.metadata.GlobalMetaData;
 import parquet.schema.MessageType;
 import parquet.vector.ColumnVector;
+import parquet.vector.RowBatch;
 
 /**
  * Read records from a Parquet file.
@@ -157,6 +158,39 @@ public class ParquetReader<T> implements Closeable {
       throw new IOException(e);
     }
   }
+
+  /**
+   * Reads the next batch of rows. The caller needs to check the returned batch size with {@link parquet.vector.RowBatch#size()}.
+   * @param previous a row batch object to be reused by the reader if possible
+   * @return the row batch that was read
+   * @throws java.io.IOException
+   */
+   public RowBatch nextBatch(RowBatch previous) throws IOException {
+     MessageType requestedSchema = readContext.getRequestedSchema();
+     List<ColumnDescriptor> columns = requestedSchema.getColumns();
+     int nColumns = columns.size();
+     ColumnVector[] columnVectors;
+     if (previous == null || previous.getColumns() == null) {
+       previous = new RowBatch();
+       columnVectors = new ColumnVector[nColumns];
+       for (int i = 0; i < nColumns; i++) {
+         ColumnVector columnVector = ColumnVector.createVector(columns.get(i));
+         MessageType columnSchema = new MessageType(requestedSchema.getFieldName(i), requestedSchema.getType(i));
+         readVector(columnVector, columnSchema);
+         columnVectors[i] = columnVector;
+       }
+      } else {
+       columnVectors = previous.getColumns();
+       for (int i = 0; i < nColumns; i++) {
+         ColumnVector columnVector = columnVectors[i];
+         MessageType columnSchema = new MessageType(requestedSchema.getFieldName(i), requestedSchema.getType(i));
+         readVector(columnVector, columnSchema);
+       }
+      }
+
+     previous.setColumns(columnVectors);
+     return previous;
+   }
 
 
   private void initReader() throws IOException {

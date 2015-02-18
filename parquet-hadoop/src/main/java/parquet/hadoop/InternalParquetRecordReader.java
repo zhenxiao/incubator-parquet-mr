@@ -248,7 +248,7 @@ class InternalParquetRecordReader<T> {
         total = 0;
     }
 
-    if (column != lastColumn) {
+    if (!column.equals(lastColumn)) {
         initializeVector(column);
         lastColumn = column;
     }
