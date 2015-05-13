@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.parquet.Log;
+import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.ColumnReader;
 import org.apache.parquet.column.impl.ColumnReadStoreImpl;
 import org.apache.parquet.io.api.Converter;
@@ -36,6 +37,7 @@ import org.apache.parquet.io.api.RecordConsumer;
 import org.apache.parquet.io.api.RecordMaterializer;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
+import org.apache.parquet.vector.ColumnVector;
 
 
 /**
@@ -422,6 +424,47 @@ class RecordReaderImplementation<T> extends RecordReader<T> {
       recordMaterializer.skipCurrentRecord();
     }
     return record;
+  }
+
+  @Override
+  public void readVector(ColumnVector vector) {
+    int currentLevel = 0;
+    recordRootConverter.start();
+    State currentState = states[0];
+    do {
+      ColumnReader columnReader = currentState.column;
+      int d = columnReader.getCurrentDefinitionLevel();
+      // creating needed nested groups until the current field (opening tags)
+      int depth = currentState.definitionLevelToDepth[d];
+      for (; currentLevel <= depth; ++currentLevel) {
+        currentState.groupConverterPath[currentLevel].start();
+      }
+      // currentLevel = depth + 1 at this point
+      // set the current value
+      if (d >= currentState.maxDefinitionLevel) {
+        // not null
+//        columnReader.writeCurrentValueToConverter();
+        columnReader.readVector(vector);
+      }
+      columnReader.consume();
+
+      int nextR = currentState.maxRepetitionLevel == 0 ? 0 : columnReader.getCurrentRepetitionLevel();
+      // level to go to close current groups
+      int next = currentState.nextLevel[nextR];
+      for (; currentLevel > next; currentLevel--) {
+        currentState.groupConverterPath[currentLevel - 1].end();
+      }
+
+      currentState = currentState.nextState[nextR];
+    } while (currentState != null);
+
+    recordRootConverter.end();
+    T record = recordMaterializer.getCurrentRecord();
+    shouldSkipCurrentRecord = record == null;
+    if (shouldSkipCurrentRecord) {
+      recordMaterializer.skipCurrentRecord();
+    }
+//    return record;
   }
 
   @Override
