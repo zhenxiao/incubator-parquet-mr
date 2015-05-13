@@ -16,17 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.parquet.column.impl;
-
-import static java.lang.String.format;
-import static org.apache.parquet.Log.DEBUG;
-import static org.apache.parquet.Preconditions.checkNotNull;
-import static org.apache.parquet.column.ValuesType.DEFINITION_LEVEL;
-import static org.apache.parquet.column.ValuesType.REPETITION_LEVEL;
-import static org.apache.parquet.column.ValuesType.VALUES;
-
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
+package org.apache.parquet.vector;
 
 import org.apache.parquet.Log;
 import org.apache.parquet.bytes.BytesInput;
@@ -35,11 +25,7 @@ import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.ColumnReader;
 import org.apache.parquet.column.Dictionary;
 import org.apache.parquet.column.Encoding;
-import org.apache.parquet.column.page.DataPage;
-import org.apache.parquet.column.page.DataPageV1;
-import org.apache.parquet.column.page.DataPageV2;
-import org.apache.parquet.column.page.DictionaryPage;
-import org.apache.parquet.column.page.PageReader;
+import org.apache.parquet.column.page.*;
 import org.apache.parquet.column.values.ValuesReader;
 import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridDecoder;
 import org.apache.parquet.io.ParquetDecodingException;
@@ -47,21 +33,23 @@ import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.io.api.PrimitiveConverter;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeNameConverter;
-import org.apache.parquet.vector.ColumnVector;
 
-/**
- * ColumnReader implementation
- *
- * @author Julien Le Dem
- *
- */
-class ColumnReaderImpl implements ColumnReader {
-  private static final Log LOG = Log.getLog(ColumnReaderImpl.class);
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+import static java.lang.String.format;
+import static org.apache.parquet.Log.DEBUG;
+import static org.apache.parquet.Preconditions.checkNotNull;
+import static org.apache.parquet.column.ValuesType.*;
+import static org.apache.parquet.vector.ColumnVector.DEFAULT_VECTOR_LENGTH;
+
+public class VectorizedColumnReaderImpl implements ColumnReader {
+  private static final Log LOG = Log.getLog(VectorizedColumnReaderImpl.class);
 
   /**
    * binds the lower level page decoder to the record converter materializing the records
-   *
-   * @author Julien Le Dem
    *
    */
   private static abstract class Binding {
@@ -129,6 +117,13 @@ class ColumnReaderImpl implements ColumnReader {
     public double getDouble() {
       throw new UnsupportedOperationException();
     }
+
+    /**
+     * @return current value
+     */
+    public void readVector(ColumnVector vector) {
+      throw new UnsupportedOperationException();
+    }
   }
 
   private final ColumnDescriptor path;
@@ -154,6 +149,10 @@ class ColumnReaderImpl implements ColumnReader {
   // this is needed because we will attempt to read the value twice when filtering
   // TODO: rework that
   private boolean valueRead;
+
+  //Vector support
+  List<DataPage> pages;
+  private int pagesRead = 0;
 
   private void bindToDictionary(final Dictionary dictionary) {
     binding =
@@ -223,6 +222,12 @@ class ColumnReaderImpl implements ColumnReader {
             current = 0;
             dataColumn.skip();
           }
+
+          @Override
+          public void readVector(ColumnVector vector) {
+            dataColumn.readVector(vector);
+          }
+
           public double getDouble() {
             return current;
           }
@@ -238,6 +243,12 @@ class ColumnReaderImpl implements ColumnReader {
           void read() {
             current = dataColumn.readInteger();
           }
+
+          @Override
+          public void readVector(ColumnVector vector) {
+            dataColumn.readVector(vector);
+          }
+
           public void skip() {
             current = 0;
             dataColumn.skip();
@@ -312,6 +323,10 @@ class ColumnReaderImpl implements ColumnReader {
             dataColumn.skip();
           }
           @Override
+          public void readVector(ColumnVector vector) {
+            dataColumn.readVector(vector);
+          }
+          @Override
           public Binary getBinary() {
             return current;
           }
@@ -328,7 +343,7 @@ class ColumnReaderImpl implements ColumnReader {
    * @param path the descriptor for the corresponding column
    * @param pageReader the underlying store to read from
    */
-  public ColumnReaderImpl(ColumnDescriptor path, PageReader pageReader, PrimitiveConverter converter) {
+  public VectorizedColumnReaderImpl(ColumnDescriptor path, PageReader pageReader, PrimitiveConverter converter) {
     this.path = checkNotNull(path, "path");
     this.pageReader = checkNotNull(pageReader, "pageReader");
     this.converter = checkNotNull(converter, "converter");
@@ -353,12 +368,13 @@ class ColumnReaderImpl implements ColumnReader {
   }
 
   private boolean isFullyConsumed() {
+    System.out.println("isFullyConsumed readValues: " + readValues + " totalValueCount: " + totalValueCount);
     return readValues >= totalValueCount;
   }
 
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#writeCurrentValueToConverter()
+   * @see parquet.column.ColumnReader#writeCurrentValueToConverter()
    */
   @Override
   public void writeCurrentValueToConverter() {
@@ -374,7 +390,7 @@ class ColumnReaderImpl implements ColumnReader {
 
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#getInteger()
+   * @see parquet.column.ColumnReader#getInteger()
    */
   @Override
   public int getInteger() {
@@ -384,7 +400,7 @@ class ColumnReaderImpl implements ColumnReader {
 
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#getBoolean()
+   * @see parquet.column.ColumnReader#getBoolean()
    */
   @Override
   public boolean getBoolean() {
@@ -394,7 +410,7 @@ class ColumnReaderImpl implements ColumnReader {
 
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#getLong()
+   * @see parquet.column.ColumnReader#getLong()
    */
   @Override
   public long getLong() {
@@ -404,7 +420,7 @@ class ColumnReaderImpl implements ColumnReader {
 
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#getBinary()
+   * @see parquet.column.ColumnReader#getBinary()
    */
   @Override
   public Binary getBinary() {
@@ -414,7 +430,7 @@ class ColumnReaderImpl implements ColumnReader {
 
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#getFloat()
+   * @see parquet.column.ColumnReader#getFloat()
    */
   @Override
   public float getFloat() {
@@ -424,7 +440,7 @@ class ColumnReaderImpl implements ColumnReader {
 
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#getDouble()
+   * @see parquet.column.ColumnReader#getDouble()
    */
   @Override
   public double getDouble() {
@@ -434,7 +450,7 @@ class ColumnReaderImpl implements ColumnReader {
 
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#getCurrentRepetitionLevel()
+   * @see parquet.column.ColumnReader#getCurrentRepetitionLevel()
    */
   @Override
   public int getCurrentRepetitionLevel() {
@@ -443,7 +459,7 @@ class ColumnReaderImpl implements ColumnReader {
 
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#getDescriptor()
+   * @see parquet.column.ColumnReader#getDescriptor()
    */
   @Override
   public ColumnDescriptor getDescriptor() {
@@ -472,12 +488,31 @@ class ColumnReaderImpl implements ColumnReader {
    * Reads a vector into the binding.
    */
   public void readVector(ColumnVector vector) {
-    throw new UnsupportedOperationException("Vectorized reads are not supported");
+    try {
+      if (!valueRead) {
+        binding.readVector(vector);
+        valueRead = true;
+        long valuesInThisBatch = 0;
+        for (DataPage page : pages) {
+          valuesInThisBatch += page.getValueCount();
+        }
+        if (vector.size() == valuesInThisBatch) {
+          //exhausted all pages
+          this.pages = null;
+        }
+      }
+    } catch (RuntimeException e) {
+      throw new ParquetDecodingException(
+              format(
+                      "Can't read value in column %s at value %d out of %d, %d out of %d in currentPage. repetition level: %d, definition level: %d",
+                      path, readValues, totalValueCount, readValues - (endOfPageValueCount - pageValueCount), pageValueCount, repetitionLevel, definitionLevel),
+              e);
+    }
   }
 
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#skip()
+   * @see parquet.column.ColumnReader#skip()
    */
   @Override
   public void skip() {
@@ -489,7 +524,7 @@ class ColumnReaderImpl implements ColumnReader {
 
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#getCurrentDefinitionLevel()
+   * @see parquet.column.ColumnReader#getCurrentDefinitionLevel()
    */
   @Override
   public int getCurrentDefinitionLevel() {
@@ -500,36 +535,55 @@ class ColumnReaderImpl implements ColumnReader {
   private void readRepetitionAndDefinitionLevels() {
     repetitionLevel = repetitionLevelColumn.nextInt();
     definitionLevel = definitionLevelColumn.nextInt();
-    ++readValues;
+//    ++readValues;
   }
 
   private void checkRead() {
-    if (isPageFullyConsumed()) {
+    if (this.pages == null) {//processed a single batch?
       if (isFullyConsumed()) {
         if (DEBUG) LOG.debug("end reached");
         repetitionLevel = 0; // the next repetition level
         return;
       }
-      readPage();
+      readPages();
     }
     readRepetitionAndDefinitionLevels();
   }
 
-  private void readPage() {
-    if (DEBUG) LOG.debug("loading page");
-    DataPage page = pageReader.readPage();
-    page.accept(new DataPage.Visitor<Void>() {
-      @Override
-      public Void visit(DataPageV1 dataPageV1) {
-        readPageV1(dataPageV1);
-        return null;
+  DataPage.Visitor visitor = new DataPage.Visitor<Void>() {
+    @Override
+    public Void visit(DataPageV1 dataPageV1) {
+      readPageV1(dataPageV1);
+      return null;
+    }
+    @Override
+    public Void visit(DataPageV2 dataPageV2) {
+      readPageV2(dataPageV2);
+      return null;
+    }
+  };
+
+  /**
+   * read as many pages as necessary to fetch {@link parquet.vector.ColumnVector#DEFAULT_VECTOR_LENGTH} values
+   */
+  private void readPages() {
+    long totalValuesRead = 0;
+    pages = new ArrayList();
+    while(totalValuesRead < DEFAULT_VECTOR_LENGTH) {
+      DataPage page = pageReader.readPage();
+      if (page == null) {
+        break;
       }
-      @Override
-      public Void visit(DataPageV2 dataPageV2) {
-        readPageV2(dataPageV2);
-        return null;
-      }
-    });
+      page.accept(visitor);
+      pages.add(page);
+      readValues += page.getValueCount();
+      totalValuesRead += page.getValueCount();
+    }
+
+    System.out.println("Total read values so far " + readValues + " read in this batch " + totalValuesRead);
+    ((VectorizedValuesReader) this.dataColumn).setPages(pages.toArray(new DataPage[pages.size()]));
+    pagesRead += pages.size();
+    System.out.println("Read pages so far " + pagesRead + " read in this batch " + pages.size());
   }
 
   private void initDataReader(Encoding dataEncoding, byte[] bytes, int offset, int valueCount) {
@@ -540,9 +594,9 @@ class ColumnReaderImpl implements ColumnReader {
         throw new ParquetDecodingException(
             "could not read page in col " + path + " as the dictionary was missing for encoding " + dataEncoding);
       }
-      this.dataColumn = dataEncoding.getDictionaryBasedValuesReader(path, VALUES, dictionary);
+      this.dataColumn = new VectorizedValuesReader(dataEncoding.getDictionaryBasedValuesReader(path, VALUES, dictionary));
     } else {
-      this.dataColumn = dataEncoding.getValuesReader(path, VALUES);
+      this.dataColumn = new VectorizedValuesReader((dataEncoding.getValuesReader(path, VALUES)));
     }
     if (dataEncoding.usesDictionary() && converter.hasDictionarySupport()) {
       bindToDictionary(dictionary);
@@ -602,13 +656,9 @@ class ColumnReaderImpl implements ColumnReader {
     }
   }
 
-  private boolean isPageFullyConsumed() {
-    return readValues >= endOfPageValueCount;
-  }
-
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#consume()
+   * @see parquet.column.ColumnReader#consume()
    */
   @Override
   public void consume() {
@@ -618,7 +668,7 @@ class ColumnReaderImpl implements ColumnReader {
 
   /**
    * {@inheritDoc}
-   * @see org.apache.parquet.column.ColumnReader#getTotalValueCount()
+   * @see parquet.column.ColumnReader#getTotalValueCount()
    */
   @Override
   public long getTotalValueCount() {

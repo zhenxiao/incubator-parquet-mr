@@ -18,6 +18,8 @@
  */
 package org.apache.parquet.io;
 
+import org.apache.parquet.column.ColumnDescriptor;
+import org.apache.parquet.vector.ColumnVector;
 
 /**
  * used to read reassembled records
@@ -39,5 +41,13 @@ public abstract class RecordReader<T> {
    */
   public boolean shouldSkipCurrentRecord() {
     return false;
+  }
+
+  /**
+   * Reads a vector of pages into the given vector
+   * @param vector the vector to fill
+   */
+  public void readVector(ColumnVector vector) {
+    throw new UnsupportedOperationException();
   }
 }
