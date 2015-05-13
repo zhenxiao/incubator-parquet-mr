@@ -47,6 +47,7 @@ import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.io.api.PrimitiveConverter;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeNameConverter;
+import org.apache.parquet.vector.ColumnVector;
 
 /**
  * ColumnReader implementation
@@ -465,6 +466,13 @@ class ColumnReaderImpl implements ColumnReader {
               path, readValues, totalValueCount, readValues - (endOfPageValueCount - pageValueCount), pageValueCount, repetitionLevel, definitionLevel),
           e);
     }
+  }
+
+  /**
+   * Reads a vector into the binding.
+   */
+  public void readVector(ColumnVector vector) {
+    throw new UnsupportedOperationException("Vectorized reads are not supported");
   }
 
   /**

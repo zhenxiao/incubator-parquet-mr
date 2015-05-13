@@ -22,6 +22,7 @@ import java.io.IOException;
 
 import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.io.api.Binary;
+import org.apache.parquet.vector.ColumnVector;
 
 /**
  * Base class to implement an encoding for a given column type.
@@ -122,5 +123,12 @@ public abstract class ValuesReader {
    * Skips the next value in the page
    */
   abstract public void skip();
+
+  /**
+   * Reads a vector of pages into the given ColumnVector
+   */
+   public void readVector(ColumnVector vector) {
+    throw new UnsupportedOperationException();
+  }
 }
 
