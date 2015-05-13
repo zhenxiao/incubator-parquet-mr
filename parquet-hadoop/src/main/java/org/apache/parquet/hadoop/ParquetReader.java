@@ -25,6 +25,8 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
@@ -32,14 +34,20 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
 import org.apache.parquet.Preconditions;
+import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.filter.UnboundRecordFilter;
 import org.apache.parquet.filter2.compat.FilterCompat;
 import org.apache.parquet.filter2.compat.FilterCompat.Filter;
 import org.apache.parquet.filter2.compat.RowGroupFilter;
+import org.apache.parquet.hadoop.api.InitContext;
 import org.apache.parquet.hadoop.api.ReadSupport;
+import org.apache.parquet.hadoop.api.ReadSupport.ReadContext;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
+import org.apache.parquet.hadoop.metadata.GlobalMetaData;
 import org.apache.parquet.hadoop.util.HiddenFileFilter;
 import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.vector.ColumnVector;
+import org.apache.parquet.vector.RowBatch;
 
 /**
  * Read records from a Parquet file.
@@ -49,7 +57,9 @@ public class ParquetReader<T> implements Closeable {
 
   private final ReadSupport<T> readSupport;
   private final Configuration conf;
+  private final ReadContext readContext;
   private final Iterator<Footer> footersIterator;
+  private final GlobalMetaData globalMetaData;
   private final Filter filter;
 
   private InternalParquetRecordReader<T> reader;
@@ -114,6 +124,10 @@ public class ParquetReader<T> implements Closeable {
     List<FileStatus> statuses = Arrays.asList(fs.listStatus(file, HiddenFileFilter.INSTANCE));
     List<Footer> footers = ParquetFileReader.readAllFootersInParallelUsingSummaryFiles(conf, statuses, false);
     this.footersIterator = footers.iterator();
+    globalMetaData = ParquetFileWriter.getGlobalMetaData(footers);
+    MessageType schema = globalMetaData.getSchema();
+    Map<String, Set<String>> extraMetadata = globalMetaData.getKeyValueMetaData();
+    readContext = readSupport.init(new InitContext(conf, extraMetadata, schema));
   }
 
   /**
@@ -132,6 +146,56 @@ public class ParquetReader<T> implements Closeable {
       throw new IOException(e);
     }
   }
+
+  public void readVector(ColumnVector vector, MessageType column) throws IOException {
+    try {
+      if (reader != null && reader.nextBatch(vector, column)) {
+        return;
+      } else {
+        initReader();
+        if (reader == null) {
+          return;
+        } else {
+          readVector(vector, column);
+        }
+      }
+    } catch (InterruptedException e) {
+      throw new IOException(e);
+    }
+  }
+
+  /**
+   * Reads the next batch of rows. The caller needs to check the returned batch size with {@link parquet.vector.RowBatch#size()}.
+   * @param previous a row batch object to be reused by the reader if possible
+   * @return the row batch that was read
+   * @throws java.io.IOException
+   */
+   public RowBatch nextBatch(RowBatch previous) throws IOException {
+     MessageType requestedSchema = readContext.getRequestedSchema();
+     List<ColumnDescriptor> columns = requestedSchema.getColumns();
+     int nColumns = columns.size();
+     ColumnVector[] columnVectors;
+     if (previous == null || previous.getColumns() == null) {
+       previous = new RowBatch();
+       columnVectors = new ColumnVector[nColumns];
+       for (int i = 0; i < nColumns; i++) {
+         ColumnVector columnVector = ColumnVector.createVector(columns.get(i));
+         MessageType columnSchema = new MessageType(requestedSchema.getFieldName(i), requestedSchema.getType(i));
+         readVector(columnVector, columnSchema);
+         columnVectors[i] = columnVector;
+       }
+      } else {
+       columnVectors = previous.getColumns();
+       for (int i = 0; i < nColumns; i++) {
+         ColumnVector columnVector = columnVectors[i];
+         MessageType columnSchema = new MessageType(requestedSchema.getFieldName(i), requestedSchema.getType(i));
+         readVector(columnVector, columnSchema);
+       }
+      }
+
+     previous.setColumns(columnVectors);
+     return previous;
+   }
 
   private void initReader() throws IOException {
     if (reader != null) {

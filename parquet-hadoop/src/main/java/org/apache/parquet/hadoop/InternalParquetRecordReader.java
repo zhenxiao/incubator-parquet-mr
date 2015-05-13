@@ -48,6 +48,7 @@ import org.apache.parquet.io.api.RecordMaterializer.RecordMaterializationExcepti
 import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.Type;
+import org.apache.parquet.vector.ColumnVector;
 
 import static java.lang.String.format;
 import static org.apache.parquet.Log.DEBUG;
@@ -83,6 +84,12 @@ class InternalParquetRecordReader<T> {
 
   private Path file;
   private UnmaterializableRecordCounter unmaterializableRecordCounter;
+
+  private Map<String, String> extraMetadata;
+  private Map<String, String> readSupportMetadata;
+  private List<BlockMetaData> blocks;
+  private Configuration configuration;
+  private MessageType lastColumn = null;
 
   /**
    * @param readSupport Object which helps reads files of the given type, e.g. Thrift, Avro.
@@ -144,6 +151,18 @@ class InternalParquetRecordReader<T> {
     }
   }
 
+  private void initializeVector(MessageType column) throws IOException {
+    this.requestedSchema = column;
+    this.columnCount = this.requestedSchema.getPaths().size();
+    this.recordConverter = readSupport.prepareForRead(configuration, extraMetadata, fileSchema,
+                                new ReadSupport.ReadContext(requestedSchema, readSupportMetadata));
+    List<ColumnDescriptor> columns = requestedSchema.getColumns();
+    this.reader = new ParquetFileReader(configuration, file, blocks, columns);
+    for (BlockMetaData block : blocks) {
+      total += block.getRowCount();
+    }
+  }
+
   public void close() throws IOException {
     if (reader != null) {
       reader.close();
@@ -176,6 +195,10 @@ class InternalParquetRecordReader<T> {
     this.fileSchema = fileSchema;
     this.file = file;
     this.columnCount = requestedSchema.getPaths().size();
+    this.extraMetadata = extraMetadata;
+    this.readSupportMetadata = readSupportMetadata;
+    this.blocks = blocks;
+    this.configuration = configuration;
     this.recordConverter = readSupport.prepareForRead(
         configuration, fileMetadata, fileSchema, readContext);
     this.strictTypeChecking = configuration.getBoolean(STRICT_TYPE_CHECKING, true);
@@ -254,6 +277,51 @@ class InternalParquetRecordReader<T> {
       setMultiMap.put(entry.getKey(), Collections.unmodifiableSet(set));
     }
     return Collections.unmodifiableMap(setMultiMap);
+  }
+
+  public boolean nextBatch(ColumnVector vector, MessageType column) throws IOException, InterruptedException {
+    boolean recordFound = false;
+
+    if (lastColumn == null) {
+        total = 0;
+    }
+
+    if (!column.equals(lastColumn)) {
+        initializeVector(column);
+        lastColumn = column;
+    }
+
+    while (!recordFound) {
+      // no more records left
+      if (current >= total) { return false; }
+
+      try {
+        checkRead();
+        recordReader.readVector(vector);
+        current += vector.size();
+        System.out.println("CURRENT " + current);
+        if (recordReader.shouldSkipCurrentRecord()) {
+          // this record is being filtered via the filter2 package
+          if (DEBUG) LOG.debug("skipping record");
+          continue;
+        }
+
+        //TODO how to handle this case?
+//        if (currentValue == null) {
+//          // only happens with FilteredRecordReader at end of block
+//          current = totalCountLoadedSoFar;
+//          if (DEBUG) LOG.debug("filtered record reader reached end of block");
+//          continue;
+//        }
+
+        recordFound = true;
+
+        if (DEBUG) LOG.debug("read value: " + currentValue);
+      } catch (RuntimeException e) {
+        throw new ParquetDecodingException(format("Can not read value at %d in block %d in file %s", current, currentBlock, file), e);
+      }
+    }
+    return true;
   }
 
 }
