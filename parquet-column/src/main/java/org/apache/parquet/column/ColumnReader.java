@@ -19,6 +19,7 @@
 package org.apache.parquet.column;
 
 import org.apache.parquet.io.api.Binary;
+import org.apache.parquet.vector.ColumnVector;
 
 /**
  * Reader for (repetition level, definition level, values) triplets.
@@ -112,4 +113,8 @@ public interface ColumnReader {
    */
   ColumnDescriptor getDescriptor();
 
+  /**
+   * Reads a vector of values from the page into the given vector
+   */
+  void readVector(ColumnVector vector);
 }
