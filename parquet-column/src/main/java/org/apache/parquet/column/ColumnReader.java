@@ -113,8 +113,4 @@ public interface ColumnReader {
    */
   ColumnDescriptor getDescriptor();
 
-  /**
-   * Reads a vector of values from the page into the given vector
-   */
-  void readVector(ColumnVector vector);
 }
