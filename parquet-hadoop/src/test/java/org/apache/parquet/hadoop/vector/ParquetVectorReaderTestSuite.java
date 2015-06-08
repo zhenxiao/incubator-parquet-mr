@@ -16,11 +16,20 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.parquet.vector;
+package org.apache.parquet.hadoop.vector;
 
-public class IntColumnVector extends ColumnVector
+import org.junit.runner.RunWith;
+import org.junit.runners.Suite;
+
+@RunWith(Suite.class)
+@Suite.SuiteClasses({
+        TestParquetVectorReaderUNCOMPRESSED.class,
+        TestParquetVectorReaderUNCOMPRESSEDV2.class,
+        TestParquetVectorReaderGZIP.class,
+        TestParquetVectorReaderGZIPV2.class,
+        TestParquetVectorReaderSNAPPY.class,
+        TestParquetVectorReaderSNAPPYV2.class
+})
+public class ParquetVectorReaderTestSuite
 {
-  public IntColumnVector() {
-    super(int.class, Integer.BYTES);
-  }
 }

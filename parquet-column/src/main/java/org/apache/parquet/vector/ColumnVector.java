@@ -18,34 +18,21 @@
 package org.apache.parquet.vector;
 
 import org.apache.parquet.column.ColumnDescriptor;
-import org.apache.parquet.column.page.DataPage;
-import org.apache.parquet.column.page.DataPageV1;
-import org.apache.parquet.column.page.DataPageV2;
-import org.apache.parquet.column.values.ValuesReader;
-import org.apache.parquet.schema.PrimitiveType;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
-
-import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.DOUBLE;
 
 public abstract class ColumnVector
 {
   public static final int DEFAULT_VECTOR_LENGTH = 1024;
-
-  protected boolean[] isNull;
   protected Class valueType;
-  protected boolean isLazy;
-  protected int numValues;
-  protected DataPage[] pages;
+  public ByteBuffer values;
+  public boolean [] isNull;
+  private int numValues;
 
-  //for lazy decoding
-  protected ValuesReader decoder;
-
-  public ColumnVector(Class valueType, boolean isLazy) {
-    this.isNull = new boolean[DEFAULT_VECTOR_LENGTH];
+  ColumnVector(Class valueType, int sizeOfValue) {
     this.valueType = valueType;
-    this.isLazy = isLazy;
+    this.values = ByteBuffer.allocate(DEFAULT_VECTOR_LENGTH * sizeOfValue);
+    this.isNull = new boolean[DEFAULT_VECTOR_LENGTH];
   }
 
   /**
@@ -56,54 +43,21 @@ public abstract class ColumnVector
   }
 
   /**
-   * Decodes the values in this column vector
-   * and returns the decoded values in a ByteBuffer
-   */
-  abstract public ByteBuffer decode();
-
-  /**
    * @return the number of values in this column vector
    */
   public int size() {
     return numValues;
   }
 
-  /**
-   * @return whether this is a lazy column vector
-   */
-  public boolean isLazy(){
-    return isLazy;
-  }
-
-  /**
-   * @return the isNull array
-   */
-  public boolean[] getIsNull(){
-    return isNull;
-  }
-
-  void setNumberOfValues(int numValues)
+  public void setNumberOfValues(int numValues)
   {
     this.numValues = numValues;
   }
 
-  void setPages(DataPage[] pages) {
-    this.pages = pages;
-  }
-
-  void setDecoder(ValuesReader decoder) {
-    this.decoder = decoder;
-  }
-
-  protected void initDecoder(DataPage page) throws IOException {
-    if (page instanceof DataPageV1)
-      decoder.initFromPage(page.getValueCount(), ((DataPageV1)page).getBytes().toByteArray(), 0);
-    else
-      decoder.initFromPage(page.getValueCount(), ((DataPageV2)page).getData().toByteArray(), 0);
-  }
-
-  public static final ColumnVector createVector(ColumnDescriptor descriptor) {
+  public static final ColumnVector newColumnVector(ColumnDescriptor descriptor) {
     switch (descriptor.getType()) {
+      case BOOLEAN:
+        return new BooleanColumnVector();
       case DOUBLE:
         return new DoubleColumnVector();
       case FLOAT:
@@ -112,12 +66,37 @@ public abstract class ColumnVector
         return new IntColumnVector();
       case INT64:
         return new LongColumnVector();
+      case BINARY:
+        return new ByteColumnVector(1);
       case INT96:
-//      case BINARY:
-//      case FIXED_LEN_BYTE_ARRAY:
-//        return new ByteColumnVector();
+        return new ByteColumnVector(12); //TODO does this hold for all encodings?
+      case FIXED_LEN_BYTE_ARRAY:
+        return new ByteColumnVector(descriptor.getTypeLength());
       default:
         throw new IllegalArgumentException("Unhandled column type " + descriptor.getType());
     }
+  }
+
+  /**
+   * Ensure that the remaining capacity in the values byte buffer > requiredCapacity
+   */
+  public void ensureCapacity(int requiredCapacity) {
+    if (values.remaining() >= requiredCapacity) {
+      return;
+    }
+
+    int capacity = values.capacity();
+    int multiplier = 2;
+    while (capacity * multiplier - values.position() < requiredCapacity) {
+      multiplier++;
+    }
+
+    multiplier *= 1.25; // have some slack
+
+    ByteBuffer newBuffer = ByteBuffer.allocate(capacity * multiplier);
+    int currentPosition = values.position();
+    System.arraycopy(values.array(), 0, newBuffer.array(), 0, values.array().length);
+    newBuffer.position(currentPosition);
+    values = newBuffer;
   }
 }
