@@ -19,6 +19,7 @@
 package org.apache.parquet.io;
 
 import org.apache.parquet.column.ColumnDescriptor;
+import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.vector.ColumnVector;
 
 /**
@@ -44,10 +45,12 @@ public abstract class RecordReader<T> {
   }
 
   /**
-   * Reads a vector of pages into the given vector
-   * @param vector the vector to fill
+   * Reads a vector of pages into the given vectors
+   * @param vectors the vectors to fill
+   * @param current number of loaded records so far
+   * @param total total number of records in the row group
    */
-  public void readVector(ColumnVector vector) {
+  public void readVectors(ColumnVector[] vectors, MessageType[] columnSchemas, long current, long total) {
     throw new UnsupportedOperationException();
   }
 }
