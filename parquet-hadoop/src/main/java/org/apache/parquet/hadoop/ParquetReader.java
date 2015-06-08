@@ -146,16 +146,16 @@ public class ParquetReader<T> implements Closeable {
     }
   }
 
-  public void readVector(ColumnVector vector, MessageType column) throws IOException {
+  private boolean readVectors(ColumnVector[] vectors, MessageType[] columns) throws IOException {
     try {
-      if (reader != null && reader.nextBatch(vector, column)) {
-        return;
+      if (reader != null && reader.nextBatch(vectors, columns)) {
+        return true;
       } else {
         initReader();
         if (reader == null) {
-          return;
+          return false;
         } else {
-          readVector(vector, column);
+          return readVectors(vectors, columns);
         }
       }
     } catch (InterruptedException e) {
@@ -164,7 +164,7 @@ public class ParquetReader<T> implements Closeable {
   }
 
   /**
-   * Reads the next batch of rows. The caller needs to check the returned batch size with {@link parquet.vector.RowBatch#size()}.
+   * Reads the next batch of rows.
    * @param previous a row batch object to be reused by the reader if possible
    * @return the row batch that was read
    * @throws java.io.IOException
@@ -174,26 +174,34 @@ public class ParquetReader<T> implements Closeable {
      List<ColumnDescriptor> columns = requestedSchema.getColumns();
      int nColumns = columns.size();
      ColumnVector[] columnVectors;
-     if (previous == null || previous.getColumns() == null) {
-       previous = new RowBatch();
-       columnVectors = new ColumnVector[nColumns];
-       for (int i = 0; i < nColumns; i++) {
-         ColumnVector columnVector = ColumnVector.createVector(columns.get(i));
-         MessageType columnSchema = new MessageType(requestedSchema.getFieldName(i), requestedSchema.getType(i));
-         readVector(columnVector, columnSchema);
-         columnVectors[i] = columnVector;
-       }
-      } else {
-       columnVectors = previous.getColumns();
-       for (int i = 0; i < nColumns; i++) {
-         ColumnVector columnVector = columnVectors[i];
-         MessageType columnSchema = new MessageType(requestedSchema.getFieldName(i), requestedSchema.getType(i));
-         readVector(columnVector, columnSchema);
-       }
-      }
 
-     previous.setColumns(columnVectors);
-     return previous;
+     RowBatch rowBatch = previous;
+     if (rowBatch == null) {
+       rowBatch = new RowBatch();
+     }
+
+     if (rowBatch.getColumns() == null) {
+       columnVectors = new ColumnVector[nColumns];
+       rowBatch.setColumns(columnVectors);
+     } else {
+       columnVectors = rowBatch.getColumns();
+     }
+
+     MessageType[] columnSchemas = new MessageType[nColumns];
+     for (int i = 0; i < nColumns; i++) {
+       ColumnVector columnVector = columnVectors[i];
+       columnSchemas[i] = new MessageType(requestedSchema.getFieldName(i), requestedSchema.getType(i));
+
+       if (columnVector == null) {
+         columnVector = ColumnVector.newColumnVector(columns.get(i));
+       }
+
+       rowBatch.getColumns()[i] = columnVector;
+       columnVector.values.clear(); //prepare for a new read
+     }
+
+     boolean hasMoreRecords = readVectors(rowBatch.getColumns(), columnSchemas);
+     return hasMoreRecords ? rowBatch : null;
    }
 
   private void initReader() throws IOException {
