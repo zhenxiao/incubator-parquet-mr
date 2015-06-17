@@ -229,4 +229,15 @@ public class SimpleGroup extends Group {
     ((Primitive)getValue(field, index)).writeValue(recordConsumer);
   }
 
+  public boolean isNull() {
+    boolean isNull = true;
+    for (List<Object> list : data) {
+      if (list.size() > 0) {
+        isNull = false;
+        break;
+      }
+    }
+    return isNull;
+  }
+
 }

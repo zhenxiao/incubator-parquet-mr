@@ -19,6 +19,7 @@
 package org.apache.parquet.example.data.simple.convert;
 
 import org.apache.parquet.example.data.Group;
+import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
 import org.apache.parquet.io.api.GroupConverter;
 import org.apache.parquet.io.api.RecordMaterializer;
@@ -46,7 +47,8 @@ public class GroupRecordConverter extends RecordMaterializer<Group> {
 
   @Override
   public Group getCurrentRecord() {
-    return root.getCurrentRecord();
+    SimpleGroup simpleGroup = (SimpleGroup) root.getCurrentRecord();
+    return simpleGroup.isNull() ? null : simpleGroup;
   }
 
   @Override
