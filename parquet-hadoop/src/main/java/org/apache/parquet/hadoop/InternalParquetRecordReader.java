@@ -18,17 +18,8 @@
  */
 package org.apache.parquet.hadoop;
 
-import java.io.IOException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-
 import org.apache.parquet.Log;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.page.PageReadStore;
@@ -49,6 +40,15 @@ import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.Type;
 import org.apache.parquet.vector.ColumnVector;
+import org.apache.parquet.vector.ObjectColumnVector;
+
+import java.io.IOException;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static java.lang.String.format;
 import static org.apache.parquet.Log.DEBUG;
@@ -264,6 +264,33 @@ class InternalParquetRecordReader<T> {
       setMultiMap.put(entry.getKey(), Collections.unmodifiableSet(set));
     }
     return Collections.unmodifiableMap(setMultiMap);
+  }
+
+  public boolean nextBatch(ObjectColumnVector<T> vector) throws IOException, InterruptedException {
+    boolean recordFound = false;
+
+    while (!recordFound) {
+      // no more records left
+      if (current >= total) { return false; }
+
+      try {
+        checkRead();
+        recordReader.readVector(vector, current, totalCountLoadedSoFar);
+        current += vector.size();
+        if (recordReader.shouldSkipCurrentRecord()) {
+          // this record is being filtered via the filter2 package
+          if (DEBUG) LOG.debug("skipping record");
+          continue;
+        }
+
+        recordFound = true;
+
+        if (DEBUG) LOG.debug("read value: " + currentValue);
+      } catch (RuntimeException e) {
+        throw new ParquetDecodingException(format("Can not read value at %d in block %d in file %s", current, currentBlock, file), e);
+      }
+    }
+    return true;
   }
 
   public boolean nextBatch(ColumnVector[] vectors, MessageType[] columns) throws IOException, InterruptedException {
