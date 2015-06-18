@@ -150,15 +150,6 @@ class InternalParquetRecordReader<T> {
     }
   }
 
-  private void initializeVector(MessageType column) throws IOException {
-//    this.requestedSchema = column;
-//    this.columnCount = this.requestedSchema.getPaths().size();
-//    this.recordConverter = readSupport.prepareForRead(configuration, extraMetadata, fileSchema,
-//                                new ReadSupport.ReadContext(requestedSchema, readSupportMetadata));
-//    List<ColumnDescriptor> columns = requestedSchema.getColumns();
-//    this.reader = new ParquetFileReader(configuration, file, blocks, columns);
-  }
-
   public void close() throws IOException {
     if (reader != null) {
       reader.close();
@@ -310,7 +301,6 @@ class InternalParquetRecordReader<T> {
       try {
         checkRead();
         recordReader.readVectors(vectors, columns, current, totalCountLoadedSoFar);
-        //TODO is this OK?
         current += vectors[0].size();
         if (recordReader.shouldSkipCurrentRecord()) {
           // this record is being filtered via the filter2 package
