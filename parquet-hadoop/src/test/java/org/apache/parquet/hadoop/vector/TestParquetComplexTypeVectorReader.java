@@ -122,14 +122,14 @@ public class TestParquetComplexTypeVectorReader
     /**
      * The test file schema is
      message org.kitesdk.examples.data.test_record {
-     required group struct {
-     optional binary f1 (UTF8);
-     optional boolean f2;
-     optional int32 f3;
-     optional double f4;
-     optional int64 f5;
-     }
-     optional int64 other_field;
+       required group struct {
+         optional binary f1 (UTF8);
+         optional boolean f2;
+         optional int32 f3;
+         optional double f4;
+         optional int64 f5;
+       }
+       optional int64 other_field;
      }
      */
 
@@ -189,13 +189,13 @@ public class TestParquetComplexTypeVectorReader
      * The test file schema is
      *
      message org.kitesdk.examples.data.test_record {
-     required group map (MAP) {
-     repeated group map (MAP_KEY_VALUE) {
-     required binary key (UTF8);
-     required binary value (UTF8);
-     }
-     }
-     required int32 integer;
+       required group map (MAP) {
+         repeated group map (MAP_KEY_VALUE) {
+           required binary key (UTF8);
+           required binary value (UTF8);
+         }
+       }
+      required int32 integer;
      }
      */
     conf.set(PARQUET_READ_SCHEMA, "message org.kitesdk.examples.data.test_record {\n" +

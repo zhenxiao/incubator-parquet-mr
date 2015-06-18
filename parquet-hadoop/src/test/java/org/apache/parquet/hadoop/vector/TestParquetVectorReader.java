@@ -91,7 +91,6 @@ public abstract class TestParquetVectorReader
         group.append("null_field", "test");
       }
       writer.write(group);
-      System.out.println("Written record " + i);
     }
     writer.close();
   }

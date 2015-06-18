@@ -30,10 +30,21 @@ import org.apache.parquet.Log;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.ColumnReader;
 import org.apache.parquet.column.impl.ColumnReadStoreImpl;
-import org.apache.parquet.io.api.*;
+import org.apache.parquet.io.api.Converter;
+import org.apache.parquet.io.api.GroupConverter;
+import org.apache.parquet.io.api.PrimitiveConverter;
+import org.apache.parquet.io.api.RecordConsumer;
+import org.apache.parquet.io.api.RecordMaterializer;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
-import org.apache.parquet.vector.*;
+import org.apache.parquet.vector.BooleanColumnVector;
+import org.apache.parquet.vector.ByteColumnVector;
+import org.apache.parquet.vector.ColumnVector;
+import org.apache.parquet.vector.DoubleColumnVector;
+import org.apache.parquet.vector.FloatColumnVector;
+import org.apache.parquet.vector.IntColumnVector;
+import org.apache.parquet.vector.LongColumnVector;
+import org.apache.parquet.vector.ObjectColumnVector;
 
 
 /**
@@ -424,7 +435,6 @@ class RecordReaderImplementation<T> extends RecordReader<T> {
 
   private State getState(MessageType schema) {
     for (State state : states) {
-        //FIXME state.fieldPath[0] only looks at the 0th level. May not work for complex types/nested stuff.
         if (schema.containsField(state.fieldPath[0])) {
           return state;
         }
