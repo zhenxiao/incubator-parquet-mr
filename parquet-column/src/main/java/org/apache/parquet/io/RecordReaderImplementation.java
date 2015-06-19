@@ -46,6 +46,8 @@ import org.apache.parquet.vector.IntColumnVector;
 import org.apache.parquet.vector.LongColumnVector;
 import org.apache.parquet.vector.ObjectColumnVector;
 
+import static org.apache.parquet.Log.DEBUG;
+
 
 /**
  * used to read reassembled records
@@ -462,9 +464,12 @@ class RecordReaderImplementation<T> extends RecordReader<T> {
       }
 
       T record = read();
-      if (record == null) {
+
+      if (shouldSkipCurrentRecord) {
+        LOG.debug("skipping record");
         vector.isNull[index] = true;
       }
+
       vector.values[index] = record;
     }
 
