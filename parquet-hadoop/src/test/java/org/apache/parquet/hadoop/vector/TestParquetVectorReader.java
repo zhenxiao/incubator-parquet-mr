@@ -21,11 +21,18 @@ package org.apache.parquet.hadoop.vector;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.mapreduce.InputSplit;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.TaskAttemptContext;
+import org.apache.hadoop.mapreduce.TaskAttemptID;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
+import org.apache.parquet.hadoop.ParquetInputFormat;
 import org.apache.parquet.hadoop.ParquetReader;
+import org.apache.parquet.hadoop.ParquetRecordReader;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.example.GroupReadSupport;
+import org.apache.parquet.hadoop.util.ContextUtil;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.vector.BooleanColumnVector;
@@ -35,11 +42,16 @@ import org.apache.parquet.vector.FloatColumnVector;
 import org.apache.parquet.vector.IntColumnVector;
 import org.apache.parquet.vector.LongColumnVector;
 import org.apache.parquet.vector.RowBatch;
+import org.apache.parquet.vector.VectorizedReader;
 import org.junit.AfterClass;
 import org.junit.Test;
+import org.junit.runners.Parameterized;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
 
 import static org.apache.parquet.hadoop.api.ReadSupport.PARQUET_READ_SCHEMA;
 import static org.apache.parquet.hadoop.vector.ParquetVectorTestUtils.assertFixedLengthByteArrayReads;
@@ -69,6 +81,25 @@ public abstract class TestParquetVectorReader
                                                 + "optional binary all_null_field; "
                                                 + "required binary var_len_binary_field; "
                                                 + "} ");
+
+  protected enum ReaderType {
+    RAW,
+    MR
+  }
+
+  @Parameterized.Parameters
+  public static Collection<Object[]> data() {
+    Object[][] data = {
+        { ReaderType.RAW },
+        { ReaderType.MR } };
+    return Arrays.asList(data);
+  }
+
+  private ReaderType type;
+
+  public TestParquetVectorReader(ReaderType type) {
+    this.type = type;
+  }
 
   protected static void writeData(SimpleGroupFactory f, ParquetWriter<Group> writer) throws IOException {
     for (int i = 0; i < nElements; i++) {
@@ -107,7 +138,7 @@ public abstract class TestParquetVectorReader
   @Test
   public void testBinaryRead()  throws Exception {
     conf.set(PARQUET_READ_SCHEMA, "message test { required binary binary_field;}");
-    ParquetReader<Group> reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+    VectorizedReader reader = getVectorReader();
 
     //prepare the expected data
     StringBuilder expected = new StringBuilder();
@@ -140,14 +171,14 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
   @Test
   public void testInt32Read() throws Exception {
     conf.set(PARQUET_READ_SCHEMA, "message test { required int32 int32_field;}");
-    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+    VectorizedReader reader = getVectorReader();
 
     try {
       RowBatch batch = new RowBatch();
@@ -170,14 +201,14 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
   @Test
   public void testInt64Read() throws Exception {
     conf.set(PARQUET_READ_SCHEMA, "message test { required int64 int64_field;}");
-    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+    VectorizedReader reader = getVectorReader();
 
     try {
       RowBatch batch = new RowBatch();
@@ -199,14 +230,14 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
   @Test
   public void testInt96Read() throws Exception {
     conf.set(PARQUET_READ_SCHEMA, "message test { required int96 int96_field;}");
-    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+    VectorizedReader reader = getVectorReader();
 
     try {
       RowBatch batch = new RowBatch();
@@ -226,14 +257,14 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
   @Test
   public void testDoubleRead() throws Exception {
     conf.set(PARQUET_READ_SCHEMA, "message test { required double double_field;}");
-    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+    VectorizedReader reader = getVectorReader();
 
     try {
       RowBatch batch = new RowBatch();
@@ -255,14 +286,14 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
   @Test
   public void testFloatRead() throws Exception {
     conf.set(PARQUET_READ_SCHEMA, "message test { required float float_field;}");
-    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+    VectorizedReader reader = getVectorReader();
 
     try {
       RowBatch batch = new RowBatch();
@@ -284,14 +315,14 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
   @Test
   public void testBooleanRead() throws Exception {
     conf.set(PARQUET_READ_SCHEMA, "message test { required boolean boolean_field;}");
-    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+    VectorizedReader reader = getVectorReader();
 
     try {
       RowBatch batch = new RowBatch();
@@ -314,7 +345,7 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
@@ -341,14 +372,14 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
   @Test
   public void testNullRead() throws Exception {
     conf.set(PARQUET_READ_SCHEMA, "message test { optional binary some_null_field;}");
-    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+    VectorizedReader reader = getVectorReader();
 
     try {
       RowBatch batch = new RowBatch();
@@ -375,14 +406,14 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
   @Test
   public void testAllNullRead() throws Exception {
     conf.set(PARQUET_READ_SCHEMA, "message test { optional binary all_null_field;}");
-    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+    VectorizedReader reader = getVectorReader();
 
     try {
       RowBatch batch = new RowBatch();
@@ -404,14 +435,14 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
   @Test
   public void testVariableLengthBinaryRead() throws Exception {
     conf.set(PARQUET_READ_SCHEMA, "message test { required binary var_len_binary_field;}");
-    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+    VectorizedReader reader = getVectorReader();
 
     try {
       RowBatch batch = new RowBatch();
@@ -437,14 +468,14 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
   @Test
   public void testMultipleReads() throws Exception {
     conf.set(PARQUET_READ_SCHEMA, "message test { required double double_field; required int32 int32_field; }");
-    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+    VectorizedReader reader = getVectorReader();
 
     int expected = 0;
     try {
@@ -471,14 +502,14 @@ public abstract class TestParquetVectorReader
 
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
   @Test
   public void testReadAll() throws Exception {
     conf.set(PARQUET_READ_SCHEMA, schema.toString());
-    ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+    VectorizedReader reader = getVectorReader();
 
     //prepare the expected data
     StringBuilder expectedBinary = new StringBuilder();
@@ -566,7 +597,7 @@ public abstract class TestParquetVectorReader
 
     } finally {
       if (reader != null)
-        reader.close();
+        ((Closeable) reader).close();
     }
   }
 
@@ -584,6 +615,29 @@ public abstract class TestParquetVectorReader
     for (int i = 0 ; i < 100; i++) {
       assertFixedLengthByteArrayReads(vector, 4, test, position);
       position += test.length;
+    }
+  }
+
+  private VectorizedReader getVectorReader() throws Exception {
+    switch (type) {
+      case RAW:
+        ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
+        return reader;
+      case MR:
+        ParquetRecordReader mrReader;
+        Job vectorJob = new Job(conf, "read vector");
+        ParquetInputFormat.setInputPaths(vectorJob, file);
+        ParquetInputFormat parquetInputFormat = new ParquetInputFormat(GroupReadSupport.class);
+        List<InputSplit> splits = parquetInputFormat.getSplits(vectorJob);
+        TaskAttemptContext context = ContextUtil.newTaskAttemptContext(vectorJob.getConfiguration(),
+            new TaskAttemptID());
+
+        mrReader = (ParquetRecordReader) parquetInputFormat.createRecordReader(splits.get(0), context);
+        mrReader.initialize(splits.get(0), context);
+
+        return mrReader;
+      default:
+        throw new IllegalArgumentException("The reader type is not correct.");
     }
   }
 }
