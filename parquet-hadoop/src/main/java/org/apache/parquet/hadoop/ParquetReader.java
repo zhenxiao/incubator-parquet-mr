@@ -39,8 +39,8 @@ import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.vector.ColumnVector;
 import org.apache.parquet.vector.ObjectColumnVector;
 import org.apache.parquet.vector.RowBatch;
+import org.apache.parquet.vector.VectorizedReader;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -54,7 +54,7 @@ import static org.apache.parquet.Preconditions.checkNotNull;
  * Read records from a Parquet file.
  * TODO: too many constructors (https://issues.apache.org/jira/browse/PARQUET-39)
  */
-public class ParquetReader<T> implements Closeable {
+public class ParquetReader<T> implements VectorizedReader<T> {
 
   private final ReadSupport<T> readSupport;
   private final Configuration conf;
@@ -182,6 +182,7 @@ public class ParquetReader<T> implements Closeable {
    * @return the row batch that was read
    * @throws java.io.IOException
    */
+  @Override
   public RowBatch nextBatch(RowBatch previous, Class<T> clazz) throws IOException {
     RowBatch rowBatch = previous;
     if (rowBatch == null) {
@@ -207,6 +208,7 @@ public class ParquetReader<T> implements Closeable {
    * @return the row batch that was read
    * @throws java.io.IOException
    */
+  @Override
    public RowBatch nextBatch(RowBatch previous) throws IOException {
      MessageType requestedSchema = readContext.getRequestedSchema();
      List<ColumnDescriptor> columns = requestedSchema.getColumns();
