@@ -267,11 +267,7 @@ public class ParquetRecordReader<T> extends RecordReader<Void, T> implements Vec
   }
 
   private boolean readVectors(ColumnVector[] vectors, MessageType[] columns) throws IOException {
-    try {
-      return internalReader.nextBatch(vectors, columns);
-    } catch (InterruptedException e) {
-      throw new IOException(e);
-    }
+    return internalReader.nextBatch(vectors, columns);
   }
 
   private ParquetInputSplit toParquetSplit(InputSplit split) throws IOException {

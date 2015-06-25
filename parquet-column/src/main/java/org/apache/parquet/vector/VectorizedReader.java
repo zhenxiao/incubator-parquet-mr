@@ -18,9 +18,10 @@
  */
 package org.apache.parquet.vector;
 
+import java.io.Closeable;
 import java.io.IOException;
 
-public interface VectorizedReader<T> {
+public interface VectorizedReader<T> extends Closeable {
 
   /**
    * check if there is more batch of rows to read.

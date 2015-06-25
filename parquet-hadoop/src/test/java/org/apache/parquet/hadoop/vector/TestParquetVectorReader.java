@@ -83,22 +83,22 @@ public abstract class TestParquetVectorReader
                                                 + "} ");
 
   protected enum ReaderType {
-    RAW,
+    NON_MR,
     MR
   }
 
   @Parameterized.Parameters
-  public static Collection<Object[]> data() {
+  public static Collection<Object[]> readerTypes() {
     Object[][] data = {
-        { ReaderType.RAW },
+        { ReaderType.NON_MR},
         { ReaderType.MR } };
     return Arrays.asList(data);
   }
 
-  private ReaderType type;
+  private ReaderType readerType;
 
-  public TestParquetVectorReader(ReaderType type) {
-    this.type = type;
+  public TestParquetVectorReader(ReaderType readerType) {
+    this.readerType = readerType;
   }
 
   protected static void writeData(SimpleGroupFactory f, ParquetWriter<Group> writer) throws IOException {
@@ -171,7 +171,7 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -201,7 +201,7 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -230,7 +230,7 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -257,7 +257,7 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -286,7 +286,7 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -315,7 +315,7 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -345,7 +345,7 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -372,7 +372,7 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -406,7 +406,7 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -435,7 +435,7 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -468,7 +468,7 @@ public abstract class TestParquetVectorReader
       }
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -502,7 +502,7 @@ public abstract class TestParquetVectorReader
 
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -597,7 +597,7 @@ public abstract class TestParquetVectorReader
 
     } finally {
       if (reader != null)
-        ((Closeable) reader).close();
+        reader.close();
     }
   }
 
@@ -619,8 +619,8 @@ public abstract class TestParquetVectorReader
   }
 
   private VectorizedReader getVectorReader() throws Exception {
-    switch (type) {
-      case RAW:
+    switch (readerType) {
+      case NON_MR:
         ParquetReader<Group>reader = ParquetReader.builder(new GroupReadSupport(), file).withConf(conf).build();
         return reader;
       case MR:
@@ -637,7 +637,7 @@ public abstract class TestParquetVectorReader
 
         return mrReader;
       default:
-        throw new IllegalArgumentException("The reader type is not correct.");
+        throw new IllegalArgumentException("Invalid reader type.");
     }
   }
 }
