@@ -18,6 +18,13 @@
  */
 package org.apache.parquet.hadoop;
 
+import static org.apache.parquet.Preconditions.checkNotNull;
+
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -41,14 +48,8 @@ import org.apache.parquet.vector.ObjectColumnVector;
 import org.apache.parquet.vector.RowBatch;
 import org.apache.parquet.vector.VectorizedReader;
 
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-import static org.apache.parquet.Preconditions.checkNotNull;
 
 /**
  * Read records from a Parquet file.
@@ -58,10 +59,10 @@ public class ParquetReader<T> implements VectorizedReader<T> {
 
   private final ReadSupport<T> readSupport;
   private final Configuration conf;
-  private final ReadContext readContext;
   private final Iterator<Footer> footersIterator;
-  private final GlobalMetaData globalMetaData;
   private final Filter filter;
+  private final GlobalMetaData globalMetaData;
+  private final ReadContext readContext;
 
   private InternalParquetRecordReader<T> reader;
 
